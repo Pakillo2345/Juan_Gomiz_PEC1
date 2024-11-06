@@ -1,0 +1,308 @@
+---
+title: "PEC_1"
+author: "Juan Gómiz"
+output: 
+  word_document: 
+    toc: true
+  html_document: 
+    toc: true
+---
+
+https://github.com/Pakillo2345/Juan_Gomiz_PEC1
+
+
+
+# **ABSTRACT**
+
+Tras la descarga de los catos human_cachexia.csv, se creó un SummarizedExperiment para explorar los datos de expresión de metabolitos. Comenzamos comprobando que el SummarizedExperiment está correctamente creado. A continuación, se normalizan los datos para poder realizar los siguientes procedimientos: PCA, HEATMAP, BoxPlot, CorrelationMatrix y Lima. Los resultados muestran cómo la expresión diferencial de diferentes metabolitos (glucosa, succinato y creatina) están ligados a la cachexia en humanos. 
+
+
+
+# **OBJETIVOS**
+
+Comprobar las diferencias en la expresión de metabolitos entre los pacientes con cachexia y los del grupo control (no cachexia)
+
+
+
+# **MATERIALES Y METODOS**
+
+Se descargó el fichero human_cachexia.csv desde el siguiente enlace: https://github.com/nutrimetabolomics/metaboData/tree/main/Datasets/2024-Cachexia
+
+Tras la descarga, se cargaron los datos en R utilizando el siguiente comando: cachexia <- read.csv("C:/Users/Usuario/Downloads/human_cachexia.csv")
+
+Una vez descargados los datos, procedemos a crear el SummarizedExperiment. Los únicos metadatos que contenía el dataset eran el grupo de los pacientes (control o cachexia). Además, para crear la matriz de assay, tuvimos que transponer filas con columnas del dataset original para adecuarnos al formato. 
+
+Una vez hecho eso, comprobamos la estructura de nuestra clase (dimensiones, valores, resumen, etc.). Una vez comprobado esto, se cargó el paquete "POMA" para el resto de análisis. 
+
+Ya con poma cargado, se normalizaron los datos del SummarizeExperiment (method = "log_pareto"). Ya con los datos normalizados, realizamos un PCA, un Heatmap, un BoxPlot, una matriz de correlación para comprobar si los metabolitos están correlacionados entre sí y un análisis Lima para comprobar los metabolitos con mayor expresión diferencial. 
+
+Paquetes utilizados: SummarizedExperiment, knitr, POMA, ggplot2, ComplexHeatmap, pheatmap, circlize, tidyr
+
+
+
+
+# **RESULTADOS**
+
+```{r message=FALSE, warning=FALSE}
+
+cachexia <- read.csv("C:/Users/Usuario/Downloads/human_cachexia.csv")
+
+```
+
+```{r warning=FALSE, paged.print=FALSE}
+library(SummarizedExperiment)
+
+col_data <- data.frame(Muscle.loss = cachexia$Muscle.loss, row.names = cachexia$Patient.ID)
+cachexia$Muscle.loss <- NULL
+rownames(cachexia) <- cachexia$Patient.ID
+cachexia$Patient.ID <- NULL
+assayData <- t(as.matrix(cachexia))
+
+SE <- SummarizedExperiment(assays = list(counts = assayData), colData = col_data)
+
+save(SE, file = "data.Rda")
+
+# Creamos la clase
+```
+
+```{r message=FALSE, warning=FALSE}
+# Comprobamos dimensiones
+dim(SE)
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# Comprobamos los nombres de filas y columnas
+rownames(SE)  
+colnames(SE)
+```
+```{r message=FALSE, warning=FALSE}
+colData(SE)
+ # Comprobamos los metadatos
+```
+
+```{r message=FALSE, warning=FALSE}
+#visualizamos los primeros datos
+assay(SE, "counts")[1:5, 1:5]
+
+```
+
+```{r message=FALSE, warning=FALSE}
+summary(assay(SE, "counts"))
+
+# resumen estadistico del assay
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(knitr)
+group_counts <- table(colData(SE)$Muscle.loss)
+
+kable(group_counts, caption = "Tabla de frecuencias:")
+
+barplot(group_counts, main = "Distribución de Grupos", xlab = "Grupo", ylab = "Frecuencia", col = c("lightblue", "salmon"))
+
+# Se crea una tabla de frecuencias absolutas para ver la distribución de los pacientes en ambos grupos
+
+# Cramos un barplot para ver esa distribución gráficamente
+```
+
+
+```{r}
+library(POMA)
+#Normalizamos el SummarizedExperiment con la funcionPomaNorm y el método elegido ha sido log_pareto
+
+normaliced <- PomaNorm(SE, method = "log_pareto")
+```
+
+
+
+
+```{r message=FALSE, warning=FALSE}
+# Creamos la variable expression_data, la cual contiene los datos traspuestos del assay normalizado para poder hacer el PCA
+
+expression_data <- t(assay(normaliced))
+
+pca_result <- prcomp(expression_data, center = TRUE, scale. = FALSE)
+
+pca_data <- data.frame(PC1 = pca_result$x[,1], PC2 = pca_result$x[,2], Grupos = colData(SE)$Muscle.loss)
+
+
+# Pasamos el pca a data.frame para poder graficarlo con ggplot2
+
+library(ggplot2)
+ggplot(pca_data, aes(x = PC1, y = PC2, color = Grupos)) +
+  geom_point(size = 3) +
+  labs(title = "PCA", x = "Componente Principal 1", y = "Componente Principal 2") +
+  theme_classic()
+
+#Visualizamos los resultados de los dos componentes principales del PCA
+
+```
+
+Como se puede observar, de manera genral, los datos se ven distribuidos uniformemente, aunque existen cierta tendencia de los controles a encontrarse en la parte menor-izquierda de la tabla. Con esto se puede observar que existen ligeras diferencias entre ambos grupos. 
+
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(ComplexHeatmap)
+library(pheatmap)
+library(circlize)
+
+# Asignamos el assay normalizado a la variable expresion_norm
+expresion_norm <- assay(normaliced)
+
+#Definimos los colores de los diferentes grupos
+
+color = c("cachexic" = "springgreen","control" = "darkorange")
+
+# Definimos las anotaciones de las columnas (los grupos) con HeatmapAnnotation
+
+column_ha <- HeatmapAnnotation(GRUPO = colData(SE)$Muscle.loss, col = list(GRUPO = color))
+
+#Realizamos el Heatmap y lo guardamos en la variable heatmap_obj
+
+
+heatmap_obj<-Heatmap(expresion_norm, 
+        name = "Metabolite Expression",
+        top_annotation = column_ha,
+        col = colorRamp2(c(-2, 0, 2), c("blue", "white", "red")),
+        cluster_rows = TRUE,
+        cluster_columns = TRUE, 
+        clustering_method_columns = "ward.D2",
+        clustering_distance_columns = "euclidean",
+        show_column_names = FALSE,
+        show_row_names = TRUE,
+        row_title = "Metabolites",
+        column_title = "Sample",
+        heatmap_legend_param = list(title = "Score"))
+print(heatmap_obj)
+
+```
+
+Este Heatmap nos muestra cómo hay cierta tendencia de los metabolitos a expresarse en mayor cantidad en los pacientes del grupo cachexia. Existen algunos pacientes control que tienen sobreexpresados estos metabolitos. Habría que realizar otro tipo de estudio y estudiar otras variables para comprobar qué ocurre. 
+
+
+
+```{r message=FALSE, warning=FALSE}
+library(ggplot2)
+library(tidyr)
+
+
+# Creamos un dataframe con el assay normalizado para realizar un boxplot
+
+score <- as.data.frame(t(assay(normaliced)))
+
+# Añadimos los metadatos
+
+score$Grupo <- colData(SE)$Muscle.loss
+
+# Realizamos score_long para que aparezcan cajas por metabolitos individuales
+score_long <- pivot_longer(score, 
+                           cols = -Grupo, 
+                           names_to = "Metabolito", 
+                           values_to = "Expresion")
+
+score_long$Metabolito <- factor(score_long$Metabolito)
+
+
+ggplot(score_long, aes(x = Metabolito, y = Expresion, fill = Grupo)) +
+  geom_boxplot(alpha = 0.7) +
+  theme_classic() +
+  labs(x = "Metabolito", y = "Expresion", title = "Expresion por metabolito") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+#Visualizamos el boxplot
+```
+
+
+Con esto, podemos observar que todos los metabolitos están más expresados en el grupo cachexia que en el control, aunque en metabolitos como la acetona, la diferencia es mínima (por no decir que no hay diferencia). Para saber si estas diferencias son significativas, habría que hacer otras pruebas estadísticas. 
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(POMA)
+
+# Hacemos la matriz de correlación de nuestros datos para ver cómo de relacionadas están las expresiones de los diferentes metabolitos entre sí
+
+
+
+poma_cor <- PomaCorr(normaliced)
+poma_cor$correlations
+
+poma_cor$corrplot
+
+# Visualizamos la matriz de correlación. 
+
+```
+
+
+En líneas generales, podemos observar que las expresiones de varios metabolitos están correlacionadas entre sí, llegando a ser algunas cercanas a 1. Sin embargo, también existen metabolitos que están poco correlacionados entre sí. 
+
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+# Pasamos los metadatos a factor para que PomaLimma() pueda hacer el análisis
+
+# Lima realiza un modelo lineal y para ello definimos el contraste y ajustamos el modelo por el metodo "fdr"
+
+# el cual nos proporciona un p-valor ajustado
+
+colData(SE)$Muscle.loss <- factor(colData(SE)$Muscle.loss, levels = c("control", "cachexic"))
+
+normaliced <- PomaNorm(SE, method = "log_pareto")
+
+lima <- as.data.frame(PomaLimma(normaliced, contrast = "control-cachexic", adjust = "fdr"))
+
+lima
+
+
+# Con esto estamos viendo la expresión diferencial de los diferentes metabolitos y sus p-valores
+
+```
+
+
+A raíz de estos resultados, se confirman los análisis anteriores. Los metabolitos, visualmente, están más expresados en el grupo cachexia que en el grupo control. Además, estos resultados son signficativos si nos fijamos en el p_ajustado, el cual es menor que 0.05 en todos los casos. 
+
+Para saber los metabolitos que verdaderamente se expresan diferencialmente, usamos un método combinado. Siendo los metabolitos relevantes los que su p-valor ajustado sea < 0.05 y su log2FC esté por encima de 1 y por debajo de menos 1. 
+
+
+
+```{r, message=FALSE, warning=FALSE}
+diff <- c()
+
+p_val <- 0.05
+
+umbral <- 1
+
+met_diff <- lima[lima$adj_pvalue <= p_val & (lima$log2FC < -umbral | lima$log2FC >umbral),]
+
+kable(met_diff, caption = "Metabolitos más expresados")
+```
+
+Como resultado obtenemos que los metabolitos expresados diferencialmente entre ambos grupos son: Glucosa, Succinato y Creatina. 
+
+
+
+
+
+
+
+
+
+# **CONCLUSIONES**
+
+
+Las conclusiones que se pueden sacar de este trabajo es que los pacientes que están en el grupo cachexia tienen mayor expresion metabólica que los del grupo control. Concretamente, destacan: Glucosa, Succinato y Creatina. 
+
+
+También se subraya la necesidad de realizar más análisis o estudios contemplando otro tipo de variables. 
+
+
+
+
